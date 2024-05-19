@@ -2,21 +2,36 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getBackEndUrl } from "@/constant";
 import { ReloadOutlined } from "@ant-design/icons";
-import { Button, Form, Input, InputNumber, Select, Steps, Tag } from "antd";
+import {
+  Button,
+  Card,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Steps,
+  Tag,
+  notification,
+} from "antd";
 import axios from "axios";
 import { FC, useEffect, useState } from "react";
-
+import { deburr } from "lodash";
 interface Props {
-  onCancel?: () => void;
+  onCancel: () => void;
   data: any;
+  onSuccess?:()=>void
 }
-const StepTransaction: FC<Props> = ({ onCancel, data }) => {
+const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
   const [current, setCurrent] = useState(0);
+  const [api, contextHolder] = notification.useNotification();
   const [form] = Form.useForm();
   const [isOpt, setIsOtp] = useState(false);
-  const [otp,setOtp] = useState()
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [otp, setOtp] = useState();
+  const [pinCode, setPinCode] = useState<any>();
   const backEndUrl = getBackEndUrl();
-  const [errMess, setErrMess] = useState(undefined);
+  const [loadingSent, setLoadingSent] = useState(false);
+  const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const token = localStorage.getItem("token");
   const [dataSubmit, setDataSubmit] = useState({
@@ -72,13 +87,27 @@ const StepTransaction: FC<Props> = ({ onCancel, data }) => {
   const prev = () => {
     setCurrent(current - 1);
   };
+  const newTran = () => {
+    setCurrent(0);
+    setIsSuccess(false);
+    setIsOtp(false);
+    setDataSubmit({
+      transaction_type: "tranfer",
+      account: data.bank_card.code,
+      bank_name: undefined,
+      account_number: undefined,
+      value: undefined,
+      postage: "Nguoi chuyen tra",
+      note: undefined,
+    });
+  };
   const transaction = async () => {
     setLoading(true);
     try {
-      if(!isOpt){
+      if (!isOpt) {
         const res = await axios.post(
           `${backEndUrl}/api/transaction`,
-          dataSubmit,
+          { ...dataSubmit, pin_code: pinCode },
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -86,81 +115,168 @@ const StepTransaction: FC<Props> = ({ onCancel, data }) => {
           }
         );
         setIsOtp(res.data.data.has_otp);
+
         if (!res.data.data.has_otp) {
-          setCurrent(0);
-          setDataSubmit({
-            transaction_type: "tranfer",
-            account: data.bank_card.code,
-            bank_name: undefined,
-            account_number: undefined,
-            value: undefined,
-            postage: "Nguoi chuyen tra",
-            note: undefined,
+          setIsSuccess(true);
+          onSuccess&&onSuccess()
+          api.success({
+            message: "Thành công",
+            description: "Giao dịch thành công",
           });
+        } else {
+          setCount(60);
         }
-      }else{
-        const res = axios.post(
+      } else {
+        await axios.post(
           `${backEndUrl}/api/check-otp-transaction`,
-          {...dataSubmit,otp_code:otp},
+          { ...dataSubmit, otp_code: otp, pin_code: pinCode },
           {
             headers: {
               Authorization: `Bearer ${token}`,
             },
           }
         );
+        api.success({
+          message: "Thành công",
+          description: "Giao dịch thành công",
+        });
+        onSuccess&&onSuccess()
+        setIsSuccess(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.log(error);
+      api.error({
+        message: "Thất bại",
+        description: error.response.data.message
+          ? error.response.data.message
+          : "Giao dịch thất bại",
+      });
     } finally {
       setLoading(false);
     }
   };
+  const sentOtp = async () => {
+    const dataSubmit = form.getFieldsValue();
+    setLoadingSent(true);
+    try {
+      await axios.post(`${backEndUrl}/api/sent-otp-tran`, dataSubmit, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setCount(60);
+    } catch (error: any) {
+      console.log(error);
+    } finally {
+      setLoadingSent(false);
+    }
+  };
+  useEffect(() => {
+    if (count > 0) {
+      setTimeout(() => {
+        setCount((prev) => prev - 1);
+      }, 1000);
+    }
+  }, [count]);
   return (
-    <div>
+    <Card>
+      {contextHolder}
       <Steps current={current} items={items} />
       <div className="pt-6 min-h-[20rem]">
         {steps[current].content}
         <div className=" max-w-[600px] mx-auto mt-4">
-          {Object.keys(steps).length - 1 === current && isOpt ? (
+          {Object.keys(steps).length - 1 === current && !isSuccess ? (
             <Form layout="vertical" className="">
-              <p className="my-2">Vui lòng nhập mã otp được gửi qua email để xác nhận thanh toán</p>
-              <div className="flex gap-2 items-center">
-                <Form.Item
-                  className="!mb-4 w-full"
-                  name="otp_code"
-                >
-                  <Input onChange={(e:any)=>setOtp(e.target.value)}></Input>
-                </Form.Item>
-                <Button title="Gửi lại mã" icon={<ReloadOutlined />} className="mb-4"/>
-              </div>
+              <Form.Item
+                label="Mã pin giao dịch"
+                name="pin_code"
+                className="w-[300px]"
+                rules={[
+                  { required: true, message: "Vui lòng nhập mã pin giao dịch" },
+                ]}
+              >
+                <Input.Password
+                  className="w-full"
+                  onChange={(e) => {
+                    setPinCode(e.target.value);
+                  }}
+                ></Input.Password>
+              </Form.Item>
+              {isOpt && (
+                <>
+                  <p className="my-2">
+                    Vui lòng nhập mã otp được gửi qua email để xác nhận thanh
+                    toán
+                  </p>
+                  <div className="flex gap-2 items-center">
+                    <Form.Item
+                      className="!mb-4 w-full"
+                      name="otp_code"
+                    >
+                      <Input
+                        suffix={
+                          count > 0 ? (
+                            <Tag className="!mr-0" bordered={false}>
+                              {count}
+                            </Tag>
+                          ) : (
+                            <></>
+                          )
+                        }
+                        onChange={(e: any) => setOtp(e.target.value)}
+                      ></Input>
+                    </Form.Item>
+                    <Button
+                      title="Gửi lại mã"
+                      icon={<ReloadOutlined />}
+                      disabled={count > 0}
+                      loading={loadingSent}
+                      className="mb-4"
+                      onClick={sentOtp}
+                    />
+                  </div>
+                </>
+              )}
             </Form>
           ) : (
             <></>
           )}
         </div>
       </div>
-
-      <div className="mt-8 flex gap-2 justify-end">
-        <Button type="primary" onClick={() => next()}>
-          Huỷ
-        </Button>
-        {current < steps.length - 1 && (
-          <Button type="primary" onClick={() => next()}>
-            Tiếp theo
-          </Button>
+      <>
+        {isSuccess ? (
+          <div className="mt-8 flex gap-2 justify-end">
+            <Button onClick={onCancel}>Quay lại trang chủ</Button>
+            <Button onClick={newTran}>Tạo giao dịch mới</Button>
+          </div>
+        ) : (
+          <div className="mt-8 flex gap-2 justify-end">
+            <Button danger onClick={onCancel}>
+              Huỷ
+            </Button>
+            {current > 0 && (
+              <Button style={{ margin: "0 8px" }} onClick={() => prev()}>
+                Quay lại
+              </Button>
+            )}
+            {current < steps.length - 1 && (
+              <Button type="primary" onClick={() => next()}>
+                Tiếp theo
+              </Button>
+            )}
+            {current === steps.length - 1 && (
+              <Button
+                loading={loading}
+                type="primary"
+                onClick={() => transaction()}
+              >
+                Xác nhận
+              </Button>
+            )}
+          </div>
         )}
-        {current === steps.length - 1 && (
-          <Button loading={loading} type="primary" onClick={() => transaction()}>
-            Xác nhận
-          </Button>
-        )}
-        {current > 0 && (
-          <Button style={{ margin: "0 8px" }} onClick={() => prev()}>
-            Quay lại
-          </Button>
-        )}
-      </div>
-    </div>
+      </>
+    </Card>
   );
 };
 
@@ -190,7 +306,7 @@ const Step1: FC<{
             options={[
               { label: "Chuyển tiền", value: "tranfer" },
               { label: "Thanh toán tiền điện", value: "utilities" },
-              { label: "Mua sắm", value: "shopping" },
+              { label: "Mua sắm trực tuyến", value: "shopping" },
               { label: "Mua thẻ điện thoại", value: "phone_recharge" },
               { label: "Đóng bảo hiểm", value: "insurance" },
               { label: "Gửi tiết kiệm", value: "savings" },
@@ -247,14 +363,19 @@ const Step2: FC<{
           className="!mb-4"
           name="account_number"
           label="Số tài khoản"
-          rules={[
-            {
-              required: true,
-              message: "Vui lòng nhập số tài khoản để tiếp tục",
-            },
-          ]}
+          rules={
+            initData.transaction_type === "tranfer"
+              ? [
+                  {
+                    required: true,
+                    message: "Vui lòng nhập số tài khoản để tiếp tục",
+                  },
+                ]
+              : undefined
+          }
         >
           <Input
+            disabled={initData.transaction_type !== "tranfer"}
             type="number"
             onChange={(e) => {
               getData({ account_number: e.target.value });
@@ -297,11 +418,13 @@ const Step2: FC<{
             ]}
           ></Select>
         </Form.Item>
-        <Form.Item className="!mb-4" name="note" label="Ghi chú">
+        <Form.Item className="!mb-4" name="note" label="Nội dung">
           <Input.TextArea
             rows={1}
             onChange={(e) => {
-              getData({ note: e.target.value });
+              const inputValue = e.target.value;
+              const inputWithoutAccents = deburr(inputValue);
+              getData({ note: inputWithoutAccents });
             }}
           ></Input.TextArea>
         </Form.Item>
@@ -323,7 +446,7 @@ const Step3: FC<{ data: any }> = ({ data }) => {
   const transaction_type_item: any = {
     tranfer: "Chuyển tiền",
     utilities: "Thanh toán tiền điện",
-    shopping: "Mua sắm",
+    shopping: "Mua sắm trực tuyến",
     phone_recharge: "Mua thẻ điện thoại",
     insurance: "Đóng bảo hiểm",
     savings: "Gửi tiết kiệm",
@@ -338,9 +461,16 @@ const Step3: FC<{ data: any }> = ({ data }) => {
       {Object.keys(data).map((key: any) => {
         if (key === "postage") {
           return (
-            <div className="">
-              <span>{name[key]}</span>: <span>{postage_item[data[key]]}</span>
-            </div>
+            <>
+              {postage_item[data[key]] ? (
+                <div className="">
+                  <span>{name[key]}</span>:{" "}
+                  <span>{postage_item[data[key]]}</span>
+                </div>
+              ) : (
+                <></>
+              )}
+            </>
           );
         }
         if (key === "value") {
@@ -365,9 +495,15 @@ const Step3: FC<{ data: any }> = ({ data }) => {
           );
         } else {
           return (
-            <div className="">
-              <span>{name[key]}</span>: <span>{data[key]}</span>
-            </div>
+            <>
+              {data[key] ? (
+                <div className="">
+                  <span>{name[key]}</span>: <span>{data[key]}</span>
+                </div>
+              ) : (
+                <></>
+              )}
+            </>
           );
         }
       })}

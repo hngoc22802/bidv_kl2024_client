@@ -55,7 +55,7 @@ const LoginPage = () => {
     setLoadingSent(true)
     try {
       await axios.post(`${backEndUrl}/api/send-otp`, dataSubmit);
-      setCount(30)
+      setCount(60)
     } catch (error:any) {
       console.log(error);
       setErrMess(error.response.data.message)

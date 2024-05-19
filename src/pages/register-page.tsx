@@ -141,6 +141,14 @@ const RegisterPage = () => {
           >
             <Input.Password />
           </Form.Item>
+          <Form.Item
+            rules={[{ required: true, message: "Vui lòng nhập mã pin giao dịch!" }]}
+            name="pin_code"
+            label="Mã pin giao dịch"
+            className="!mb-4"
+          >
+            <Input.Password></Input.Password>
+          </Form.Item>
           <div className="flex gap-2">
             <Form.Item name="occupation_id" label="Nghề nghiệp" className="!mb-4 w-full">
               <Select options={occupations} className="w-full"></Select>

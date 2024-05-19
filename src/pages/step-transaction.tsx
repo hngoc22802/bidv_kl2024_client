@@ -16,12 +16,13 @@ import {
 import axios from "axios";
 import { FC, useEffect, useState } from "react";
 import { deburr } from "lodash";
+import { useNavigate } from "react-router-dom";
 interface Props {
   onCancel: () => void;
   data: any;
-  onSuccess?:()=>void
+  onSuccess?: () => void;
 }
-const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
+const StepTransaction: FC<Props> = ({ onCancel, data, onSuccess }) => {
   const [current, setCurrent] = useState(0);
   const [api, contextHolder] = notification.useNotification();
   const [form] = Form.useForm();
@@ -34,6 +35,8 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const token = localStorage.getItem("token");
+  const navigate = useNavigate();
+
   const [dataSubmit, setDataSubmit] = useState({
     transaction_type: "tranfer",
     account: data.bank_card.code,
@@ -43,7 +46,32 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
     postage: "Nguoi chuyen tra",
     note: undefined,
   });
-
+  const getData = async (params: any) => {
+    const res = await axios.post(
+      `${backEndUrl}/api/info/${params.id}`,
+      params,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    if (!res.data.data.active) {
+      setTimeout(async () => {
+        await axios.post(
+          `${backEndUrl}/api/logout`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        localStorage.clear();
+        navigate("/login");
+      }, 3000);
+    }
+  };
   const steps: any = [
     {
       title: "First",
@@ -118,7 +146,7 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
 
         if (!res.data.data.has_otp) {
           setIsSuccess(true);
-          onSuccess&&onSuccess()
+          onSuccess && onSuccess();
           api.success({
             message: "Thành công",
             description: "Giao dịch thành công",
@@ -140,7 +168,7 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
           message: "Thành công",
           description: "Giao dịch thành công",
         });
-        onSuccess&&onSuccess()
+        onSuccess && onSuccess();
         setIsSuccess(true);
       }
     } catch (error: any) {
@@ -153,6 +181,7 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
       });
     } finally {
       setLoading(false);
+      getData(data);
     }
   };
   const sentOtp = async () => {
@@ -209,10 +238,7 @@ const StepTransaction: FC<Props> = ({ onCancel, data,onSuccess }) => {
                     toán
                   </p>
                   <div className="flex gap-2 items-center">
-                    <Form.Item
-                      className="!mb-4 w-full"
-                      name="otp_code"
-                    >
+                    <Form.Item className="!mb-4 w-full" name="otp_code">
                       <Input
                         suffix={
                           count > 0 ? (
@@ -446,7 +472,7 @@ const Step3: FC<{ data: any }> = ({ data }) => {
   const transaction_type_item: any = {
     tranfer: "Chuyển tiền",
     utilities: "Thanh toán tiền điện",
-    shopping: "Mua sắm trực tuyến",
+    shopping: "Mua sắm",
     phone_recharge: "Mua thẻ điện thoại",
     insurance: "Đóng bảo hiểm",
     savings: "Gửi tiết kiệm",
